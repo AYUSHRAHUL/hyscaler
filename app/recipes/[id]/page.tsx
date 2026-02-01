@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import PrivateRoute from '@/components/PrivateRoute';
-import { useAuth } from '@/components/AuthProvider';
 import { FiStar, FiClock, FiUsers, FiArrowLeft } from 'react-icons/fi';
 
 interface RecipeDetails {
@@ -25,6 +24,16 @@ interface RecipeDetails {
   userRating?: number;
 }
 
+interface Review {
+  id: string;
+  comment: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+  };
+}
+
 export default function RecipeDetail() {
   return (
     <PrivateRoute>
@@ -36,13 +45,16 @@ export default function RecipeDetail() {
 function RecipeDetailContent() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
   const [recipe, setRecipe] = useState<RecipeDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [rating, setRating] = useState<number>(0);
   const [ratingLoading, setRatingLoading] = useState(false);
   const [ratingMessage, setRatingMessage] = useState('');
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState('');
 
   const recipeId = params?.id as string;
 
@@ -114,6 +126,69 @@ function RecipeDetailContent() {
       setRatingLoading(false);
     }
   };
+
+  const fetchReviews = async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const response = await fetch(`/api/recipes/${recipeId}/reviews`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setReviews(data.reviews || []);
+      }
+    } catch (err: unknown) {
+      console.error('Failed to fetch reviews:', err);
+    }
+  };
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewComment.trim() || reviewComment.length < 10) {
+      setReviewMessage('Review must be at least 10 characters');
+      return;
+    }
+
+    setReviewLoading(true);
+    setReviewMessage('');
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const response = await fetch(`/api/recipes/${recipeId}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ comment: reviewComment }),
+      });
+
+      if (response.ok) {
+        setReviewComment('');
+        setReviewMessage('Review posted successfully!');
+        setTimeout(() => setReviewMessage(''), 2000);
+        fetchReviews();
+      } else {
+        const errorData = await response.json();
+        setReviewMessage('Error: ' + (errorData.error || 'Failed to post review'));
+      }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setReviewMessage('Error: ' + errorMsg);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  // Fetch reviews when recipe details load
+  useEffect(() => {
+    if (recipeId) {
+      fetchReviews();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipeId]);
 
   if (loading) {
     return (
@@ -285,6 +360,62 @@ function RecipeDetailContent() {
                 </a>
               </div>
             )}
+
+            {/* Reviews Section */}
+            <div className="mt-12 pt-8 border-t border-gray-200">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Reviews ({reviews.length})</h3>
+
+              {/* Review Form */}
+              <div className="bg-gray-50 rounded-lg p-6 mb-8">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Add Your Review</h4>
+                <form onSubmit={handleReviewSubmit} className="space-y-4">
+                  <textarea
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder="Write your review (at least 10 characters)..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                    rows={4}
+                  />
+                  {reviewMessage && (
+                    <div
+                      className={`p-3 rounded-lg ${
+                        reviewMessage.includes('successfully')
+                          ? 'bg-green-50 text-green-700 border border-green-200'
+                          : 'bg-red-50 text-red-700 border border-red-200'
+                      }`}
+                    >
+                      {reviewMessage}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={reviewLoading}
+                    className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-400 font-medium"
+                  >
+                    {reviewLoading ? 'Posting...' : 'Post Review'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Reviews List */}
+              <div className="space-y-4">
+                {reviews.length > 0 ? (
+                  reviews.map((review) => (
+                    <div key={review.id} className="bg-white rounded-lg p-6 border border-gray-200">
+                      <div className="flex justify-between items-start mb-2">
+                        <p className="font-semibold text-gray-900">{review.user.name}</p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(review.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <p className="text-gray-700">{review.comment}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-center py-8">No reviews yet. Be the first to review!</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
